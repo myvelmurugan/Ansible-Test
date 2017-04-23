@@ -1,0 +1,9 @@
+---
+- hosts:production
+
+- name: User creation
+  tasks:  
+  -name: Test User
+        shell: useradd -u test 
+        when: ansible_user=!test
+        
