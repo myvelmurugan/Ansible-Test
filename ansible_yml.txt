@@ -1,0 +1,451 @@
+[wb433702@wbes921s ansible]$ cat ipv6_rhel6.yml
+---
+- name: Disable IPv6 on RHEL6 servers
+  hosts: wbes3042
+  remote_user: wb433702
+
+  tasks:
+  - name: copy the file
+    copy: src=/ansible/CONFIG/Files/disable_ipv6.conf dest=/etc/modprobe.d
+    when: ansible_distribution_major_version=="6"
+
+  - name: Disable IPV6
+    lineinfile: dest=/etc/sysconfig/network
+                line=NETWORKING_IPV6=no
+                state=present
+    when: ansible_distribution_major_version=="6"
+
+
+  - name: Disable IPV6
+    lineinfile: dest=/etc/sysconfig/network
+                line=IPV6INIT=no
+                state=present
+    when: ansible_distribution_major_version=="6"
+
+
+  - name: Disale ip6tables service
+    service: name=ip6tables state=stopped enabled=no
+    when: ansible_distribution_major_version=="6"
+
+  - name: Disable ipv6 on RHEL7
+    sysctl: name="net.ipv6.conf.all.disable_ipv6" value=1 sysctl_file=/etc/sysctl.d/ipv6.conf reload=yes
+    when: ansible_distribution_major_version=="7"
+
+[wb433702@wbes921s ansible]$
+-----------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat syslog.yml
+---
+- name: Configure syslog
+  hosts: w0lxansible01
+  remote_user: wb433702
+
+  vars:
+    syslog: "*.debug                                         @bitbucket1.worldbank.org"
+
+  tasks:
+#  - name: Update syslog
+#    lineinfile: >
+#      backup=yes
+#      state=present
+#      dest=/etc/rsyslog.conf
+#      backrefs=yes
+#      regexp='^*.debug\'
+#      line="*.debug\                                         @bitbucket1.worldbank.org"
+
+# Add a line in syslog file
+     - lineinfile: dest="/etc/rsyslog.conf"  line="{{ syslog }}" state=present
+       register: syslog
+       when: (ansible_distribution_major_version == "7" or ansible_distribution_major_version == "6")
+
+# Restart rsyslog service
+     - service: name=rsyslog state=restarted enabled=yes
+       when: (ansible_distribution_major_version == "7" or ansible_distribution_major_version == "6")
+       when: syslog.changed
+[wb433702@wbes921s ansible]$
+------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat selinux.yml
+---
+- name: SELINUX Status
+  hosts: test
+  remote_user: wb433702
+
+
+  tasks:
+  - name: Change the selinux state
+    selinux: policy=targeted state=permissive
+
+[wb433702@wbes921s ansible]$
+
+---------------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat satellite.yml
+---
+- hosts: wbes3044
+  remote_user: wb433702
+  tasks:
+   - name: copy the file
+     copy: src=/tmp/katello-ca-consumer-latest.noarch.rpm dest=/tmp
+
+#   - name: stat rhsm
+#     stat: path=/etc/rhsm/rhsm.conf
+#     register: rhsm_stat
+
+#   - name: rename a rhsm.conf file
+#     command: mv /etc/rhsm/rhsm.conf /etc/rhsm/rhsm.conf_old
+#     when: rhsm_stat.stat.exists
+
+   - name: installing the katello-ca-consumer rpm
+     yum: name=/tmp/katello-ca-consumer-latest.noarch.rpm state=present
+
+   - name: stat up2date
+     stat: path=/etc/sysconfig/rhn/up2date
+     register: up2date_stat
+
+   - name: rename a up2date file
+     command: mv /etc/sysconfig/rhn/up2date /etc/sysconfig/rhn/up2date_rhn
+     when: up2date_stat.stat.exists
+
+   - lineinfile: dest=/etc/yum/pluginconf.d/rhnplugin.conf
+                 state=present
+                 regexp='enabled = 1'
+                 line='enabled = 0'
+                 backup=yes
+   - name: register a server
+     command: subscription-manager register --org="WorldBank" --activationkey="RHEL6-DEV-AK" --force
+
+#   - redhat_subscription: state=present
+#                          activationkey=RHEL6-DEV-AK
+
+
+
+[wb433702@wbes921s ansible]$
+
+---------------------------------------------------------------------
+
+[wb433702@wbes921s ansible]$ cat rsa.yml
+---
+- name: Add HIPPM User
+  hosts: w0lxansible01
+  remote_user: wb433702
+
+
+  tasks:
+   - name: stat sd_pam
+     stat: path=/etc/sd_pam.conf
+     register: sdpam_stat
+
+   - name: Rename a sd_pam file
+     copy: src=/etc/sd_pam.conf dest=/etc/sd_pam.conf_backup
+#     command: cp -pr /etc/sd_pam.conf /etc/sd_pam.conf`date i'+%m.%d.%y'`
+     when: sdpam_stat.stat.exists
+
+   - name: Copy sd_pam.conf file
+     copy: src=/ansible/CONFIG/Files/secure/sd_pam.conf dest=/etc/sd_pam.conf backup=yes
+
+   - name: Copy sshd_config file
+     copy: src=/ansible/CONFIG/Files/secure/sshd_config dest=/etc/ssh/sshd_config backup=yes
+
+   - name: copy sshd file
+     copy: src=/ansible/CONFIG/Files/secure/sshd dest=/etc/pam.d/sshd backup=yes
+
+   - name: Create a Ace directory
+     file: path=/var/ace state=directory
+
+   - name: Copy sdconf.rec file
+     copy:  src=/ansible/CONFIG/Files/secure/sdconf.rec dest=/var/ace/sdconf.rec backup=yes
+
+   - name: create a /tmp/pam directory
+     file: path=/tmp/pam state=directory
+
+   - name: Copy PAM-Agent file
+     unarchive: src=/ansible/CONFIG/Files/secure/PAM-Agent_v7.1.0.149.01_14_13_00_07_15.tar dest=/tmp/pam
+
+   - name:  Execute pam script
+     shell: /tmp/pam/PAM-Agent_v7.1.0.149.01_14_13_00_07_15/install_pam.sh -d
+#      args:
+#        chdir: /tmp/pam/PAM-Agent_v7.1.0.149.01_14_13_00_07_15
+#        creates: pamlog.txt
+[wb433702@wbes921s ansible]$
+
+--------------------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat ipv6_rhel7.yml
+---
+- name: Disable IPv6 on RHEL7 servers
+  hosts: w0lxsatellite
+  remote_user: wb433702
+
+  tasks:
+
+# Disable IPv6
+   - sysctl: name="net.ipv6.conf.all.disable_ipv6" value=1 sysctl_file=/etc/sysctl.d/ipv6.conf reload=yes
+
+[wb433702@wbes921s ansible]$
+
+
+----------------------------------------------------------
+[wb433702@wbes921s ansible]$ cat history.yml
+---
+- name: Add HIPPM User
+  hosts: w0lxansible01
+  remote_user: wb433702
+
+  vars:
+    histtime: "export HISTTIMEFORMAT='%F %T'"
+
+
+  tasks:
+
+#    - name: Add HISTFILE
+#      lineinfile: dest=/root/.bash_profile line='export HISTFILE=/var/tsm/.history' regexp='^export\ HISTFILE' state=present
+
+    - name: Add HISTFILESIZE
+      lineinfile: >
+        backup=yes
+        state=present
+        dest=/root/.bash_profile
+        backrefs=yes
+        regexp="^export\ HISTFILESIZE"
+        line="export HISTFILESIZE=4096000000"
+
+    - name: Add HISTFILE
+      lineinfile: dest=/root/.bash_profile line='export HISTFILE=/var/tsm/.history' regexp='^export\ HISTFILE' state=present
+
+
+#    - name: Add HISTFILESIZE
+#      lineinfile: dest=/root/.bash_profile line='export HISTFILESIZE=4096000000' regexp="^export\ HISTFILESIZE" state=present
+
+    - name: Add HISTSIZE
+      lineinfile: dest=/root/.bash_profile line='export HISTSIZE=1024000000'  regexp='^export\ HISTSIZE' state=present
+
+    - name: Add HISTTIME
+      lineinfile: dest=/root/.bash_profile line="{{ histtime }}" regexp='^export\ HISTTIMEFORMAT' state=present
+
+#    - name: Add HISTFILESIZE
+#      lineinfile: >
+#        backup=yes
+#        state=present
+#        dest=/root/.bash_profile
+#        backrefs=yes
+#        regexp="^export\ HISTFILESIZE=\s+"
+#        line="export HISTFILESIZE=\t4096000000"
+[wb433702@wbes921s ansible]$
+
+--------------------------------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat hippm.yml
+---
+- name: Add HIPPM User
+  hosts: wbes923s
+  remote_user: wb433702
+
+  vars:
+    Hippm_name: hippm
+    Hippm_uid: 5657
+    Hippm_group: hippm
+    Hippm_command: Hitachi\ Account
+    Hippm_password: $6$SrrHbwY9$.HcjEhQF0klBelKiOpalozUPDq3ss/KZ2uE5fmijW92OerhmC.gCEoWWR8btNN9hnajgm6DX07QzrKnJAvPRq1
+    Coll_name: coll
+    Coll_uid: 1051
+    Coll_group: coll
+    Coll_command: BDNA\ Coll\ Account
+
+
+  tasks:
+# Add HIPPM  and COLLgroup
+    - group: name=hippm gid=5657 state=present
+    - group: name=coll gid=4150 state=present
+# Add sudoer
+    - lineinfile: dest=/etc/sudoers state=present regexp='^hippm' line='hippm   ALL=NOPASSWD:/usr/bin/passwd'
+
+
+# Add User HIPPM
+    - user: >
+        name={{ Hippm_name }}
+        password={{ Hippm_password }}
+        uid={{ Hippm_uid }}
+        shell=/bin/bash
+        group={{ Hippm_group }}
+        comment={{ Hippm_command }}
+        state=present
+
+# Add authorized_keys Hippm
+    - authorized_key: >
+        user={{ Hippm_name }}
+        key="{{ lookup('file', '/ansible/CONFIG/SSH-PublicKeys/Hippm') }}"
+        path='/home/{{ Hippm_name }}/.ssh/authorized_keys'
+[wb433702@wbes921s ansible]$
+
+
+----------------------------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat Adduser.yml
+---
+- name: Add Group/Sudoer/User
+  hosts: wbes924s
+  remote_user: wb433702
+
+vars:
+    test_name: testing
+    test_uid: 5001
+    test_password: $6$w.CHK3qf$gCcbpFjxxPvGnBL0nIcnW3ZjuKRiORsDjydKREhAD4FH/sFzU6MLFJAEGMei9eMACC7SPWvE6nQWPlK.7gwrY1
+    test_group: test
+    test_command: kartest
+
+tasks:
+# Add UNIX group
+    - group: name=test gid=1300 state=present
+
+# Add User testing
+    - user: >
+        name={{ test_name }}
+        password={{ test_password }}
+        uid={{ test_uid }}
+        shell=/bin/bash
+        group={{ test_group }}
+        comment={{ test_command }}
+        state=present
+[wb433702@wbes921s ansible]$
+
+----------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat telalert.yml
+---
+- name: To configure telalert
+  hosts: wbes3043
+  remote_user: wb433702
+
+  tasks:
+
+   - name: Copy Packages
+     unarchive: src=/ansible/CONFIG/Files/telalertc.tar dest=/usr/bin
+
+   - name: Testing the telalert
+     shell: /usr/bin/telalertw OPENSYS "testing the telalert for releasing the server {{ ansible_hostname }}"
+
+[wb433702@wbes921s ansible]$
+
+--------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat pds.yml
+---
+- name: PDS Configuration
+  hosts: w0lxansible02
+  remote_user: wb433702
+
+  tasks:
+
+   - name: Copy PDS configuration  files
+     copy: src=/ansible/CONFIG/Files/pds/{{ item }} dest=/tmp  mode=0755 backup=yes
+     with_items:
+       - perf_linux.tar
+       - install_pmon.sh
+
+   - name: Configuring PDS
+     shell: /tmp/install_pmon.sh
+     register: pds
+
+   - debug: var=pds.stdout_lines
+
+   - copy: src=/ansible/CONFIG/Files/pds/perfstat dest=//monitor/bin/perfstat mode=0755 owner=pmonitor group=pmonitor backup=yes
+
+   - shell: /monitor/bin/{{ item }} become_user=pmonitor
+     with_items:
+       - cmon.sh
+       - perfstat
+       - pds
+
+   - pause: prompt="Please login to wbes250 solaris server as a root user"
+
+   - pause: prompt="su to pmonitor and cd to /monitor/cfg"
+
+   - pause: prompt="Add the {{ ansible_hostname }} in server.list file after taking backup"
+
+   - pause: prompt="Change directory to /monitor/web and run the ./crtag"
+
+   - pause: prompt="Open https://wbes250 website and make sure the {{ ansible_hostname }} is working in performance tab"
+
+   - debug: msg="PDS is configured on {{ ansible_hostname }} "
+
+[wb433702@wbes921s ansible]$
+
+----------------------------------------------------------------------------------
+
+
+[wb433702@wbes921s ansible]$ cat dsagent.yml
+---
+- name: DS Agent Installation
+  hosts: rr04
+  remote_user: wb433702
+
+#  vars_prompt:
+#      name: "sc"
+#      prompt: "Please enter the security classification(nc/c/vc)"
+#      private: no
+
+  tasks:
+
+  - name: To check the Security Classification details
+    command: cat /sc
+    register: sc
+
+  - name: Copy RHEL7 DSA RPM
+    copy: src=/ansible/CONFIG/Files/dsagent/Agent-Core-RedHat_EL7-9.6.1-3500.x86_64.rpm dest=/tmp
+    when: (ansible_distribution_major_version == "7" and 'vc' in sc.stdout)
+
+  - name: Copy RHEL6 DSA RPM
+    copy: src=/ansible/CONFIG/Files/dsagent/Agent-Core-RedHat_EL6-9.6.1-3500.x86_64.rpm dest=/tmp
+    when: (ansible_distribution_major_version == "6" and 'vc' in sc.stdout)
+
+  - name: Copy RHEL5 DSA RPM
+    copy: src=/ansible/CONFIG/Files/dsagent/Agent-Core-RedHat_EL5-9.6.1-3500.x86_64.rpm dest=/tmp
+    when: (ansible_distribution_major_version == "5" and 'vc' in sc.stdout)
+
+  - name: Install packages
+    yum: name=/tmp/Agent-Core-RedHat_EL7-9.6.1-3500.x86_64.rpm state=present
+    when: (ansible_distribution_major_version == "7" and 'vc' in sc.stdout)
+    register: dsa7
+
+  - name: Install packages
+    yum: name=/tmp/Agent-Core-RedHat_EL6-9.6.1-3500.x86_64.rpm state=present
+    when: (ansible_distribution_major_version == "6" and 'vc' in sc.stdout)
+    register: dsa6
+
+  - name: Install packages
+    yum: name=/tmp/Agent-Core-RedHat_EL5-9.6.1-3500.x86_64.rpm state=present
+    when: (ansible_distribution_major_version == "5" and 'vc' in sc.stdout)
+    register: dsa5
+
+  - debug: msg=" DS Agent is installed successfully on {{ ansible_hostname }}"
+    when: ('vc' in sc.stdout)
+
+  - debug: msg=" DS Agent is not required for {{ ansible_hostname }}"
+    when: ('critical' in sc.stdout) or ('nc' in sc.stdout)
+
+
+
+[wb433702@wbes921s ansible]$
+
+----------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
